@@ -95,8 +95,8 @@ function update!(X::MPIArray, u::COXUpdate, v::COXVariables{T,A}) where {T,A}
     v.tmp_1m .= distribute(reshape(v.tmp_m_local2, 1, :)) # W_dist: distribute W.
     v.tmp_mm .= v.π_ind .* v.tmp_m_local1 ./ v.tmp_1m # (π_ind .* w) ./ W_dist. computation order is determined for CuArray safety. 
     pd = mul!(v.tmp_m_local1, v.tmp_mm, v.δ) # {m} = {m x [m]} * {m}.
-    v.tmp_m_local2 .= v.δ .- pd # {m}. 
-    grad = mul!(v.tmp_n, transpose(X), v.tmp_m_local2) # {[n]} = {[n] x m} * {m}. 
+    v.tmp_m_local2 .= v.δ .- pd # {m}.
+    grad = mul!(v.tmp_n, transpose(X), v.tmp_m_local2) # {[n]} = {[n] x m} * {m}.
     v.β .= soft_threshold.(v.β .+ v.σ .* grad , v.λ) # {[n]}.
 end
 
