@@ -128,7 +128,8 @@ end
 function compute_Omega!(v::ACCORDvariables{T,A}, tau::Real) where {T, A}
     # apply proximal update and update omega
     o_tilde = v.OmegaT_old - tau * v.GT
-    map!(x -> abs(x) - tau * v.lambda > 0.0 ? sign(x)*(abs(x) - tau * v.lambda) : 0.0, o_tilde, o_tilde)
+    c = tau * v.lambda
+    map!(x -> x > c ? x - c : (x < -c ? x + c : zero(T)), o_tilde, o_tilde)
     o_tilde[diagind(o_tilde, v.diag_indx)] = map(x -> 0.5 * (x + sqrt(x^2 + 4*tau)), diag(o_tilde, v.diag_indx))
     v.OmegaT = sparse(o_tilde)
     return
