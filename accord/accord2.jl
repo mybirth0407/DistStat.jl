@@ -128,19 +128,18 @@ end
 function compute_Omega!(v::ACCORDvariables{T,A}, tau::Real) where {T, A}
     # apply proximal update and update omega
     o_tilde = v.OmegaT_old - tau * v.GT
-    v.OmegaT = sparse(map(x -> abs(x) - tau * v.lambda > 0.0 ? sign(x)*(abs(x) - tau * v.lambda) : 0.0, o_tilde))
-    v.OmegaT[diagind(o_tilde, v.diag_indx)] = map(x -> 0.5 * (x + sqrt(x^2 + 4*tau)), diag(o_tilde, v.diag_indx))
+    map!(x -> abs(x) - tau * v.lambda > 0.0 ? sign(x)*(abs(x) - tau * v.lambda) : 0.0, o_tilde, o_tilde)
+    o_tilde[diagind(o_tilde, v.diag_indx)] = map(x -> 0.5 * (x + sqrt(x^2 + 4*tau)), diag(o_tilde, v.diag_indx))
+    v.OmegaT = sparse(o_tilde)
     return
 end
 
 function compute_Q(v::ACCORDvariables{T,A}, tau::Real) where {T, A}
     # compute Q function for backtracking, also return maximum difference for stopping criterion
     D = v.OmegaT - v.OmegaT_old
-    D_dot_G = sum(D .* v.GT)
-    Frobenius_D = sum(D .* 2)
-
     partial_maxdiff = maximum(abs.(D))
-    partial_Q = D_dot_G + Frobenius_D / (2.0 * tau)
+    # compute D_dot_G + D_F^2/(2*tau)
+    partial_Q = sum(D .* v.GT) + sum(D .^ 2) / (2.0 * tau)
 
     return partial_Q, partial_maxdiff
 end
@@ -163,7 +162,7 @@ function update!(u::ACCORDUpdate, v::ACCORDvariables{T,A}, g_old::Real, i_outer:
         Q = temp[2] + g_old
         nnz_ratio = temp[3] * 100.0 / (v.p ^ 2)
         
-        if Rank() == 0
+        if Rank() == 0 
             @printf("Round %03d.%02d [%10.4lf]: tau = %10.4lf, g = %10.4lf, Q = %10.4lf, %%nnz = %9.6lf, nnz = %d\n", 
                 i_outer, i_inner, Dates.value(now() - start_time) * 0.001, tau, g, Q, nnz_ratio, temp[3])
         end
@@ -195,9 +194,9 @@ function accord!(u::ACCORDUpdate, v::ACCORDvariables{T,A}, start_time::DateTime)
     return omega_nnz
 end
 
-# if Rank() != 0
-#     redirect_stdout(devnull)
-# end
+if Rank() != 0
+    redirect_stdout(devnull)
+end
 
 start_time = Dates.now()
 
@@ -246,4 +245,7 @@ open(join([output_dir, "-", cfmt("%05d", Rank())]), "w") do file
             k += 1
         end
     end
+end
+if Rank() == 0
+    @printf("Save complete. [%10.4lf]\n", Dates.value(now() - start_time) * 0.001)
 end
