@@ -116,7 +116,7 @@ function compute_g!(v::ACCORDvariables{T,A}) where {T, A}
     # compute Y = X * Omega^T 
     # and return partial computation of g (smooth part of loss function)
     mul_1d!(v.Y, v.X, v.OmegaT)
-    return 0.5 * sum(v.Y .^ 2) / v.n 
+    return 0.5 * mapreduce(x -> x^2, +, v.Y) / v.n 
 end
 
 function compute_grad!(v::ACCORDvariables{T,A}) where {T, A}
@@ -139,9 +139,16 @@ end
 function compute_Q(v::ACCORDvariables{T,A}, tau::Real) where {T, A}
     # compute Q function for backtracking, also return maximum difference for stopping criterion
     D = v.OmegaT - v.OmegaT_old
-    partial_maxdiff = maximum(abs.(D))
+    #partial_maxdiff = maximum(abs.(D))
     # compute D_dot_G + D_F^2/(2*tau)
-    partial_Q = sum(D .* v.GT) + sum(D .^ 2) / (2.0 * tau)
+    partial_maxdiff = mapreduce(x -> abs(x), max, D.nzval)
+
+    D_dot_G = zero(T)
+    for (i,j,k) in zip(findnz(D)...)
+        D_dot_G += k * v.GT[i,j]
+    end
+
+    partial_Q = D_dot_G + mapreduce(x -> x^2, +, D.nzval) / (2.0 * tau)
 
     return partial_Q, partial_maxdiff
 end
