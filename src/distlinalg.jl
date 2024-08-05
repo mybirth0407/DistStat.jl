@@ -465,9 +465,9 @@ function mul_1d!(C::MPIMatrix{T,AT}, A::MPIMatrix{T,AT}, B::MPIMatrix{T,AT}) whe
             src = mod(src + 1, team_size)
             dst = mod(dst - 1, team_size)
 
+            rreq = MPI.Irecv!(A_buf, A.comm; source = src, tag = 0)
             sreq = MPI.Isend(A.localarray, A.comm; dest = dst, tag = 0)
-            MPI.Recv!(A_buf, A.comm; source = src, tag = 0)
-            MPI.Wait(sreq)
+            _ = MPI.Waitall([rreq, sreq])
             
             A_part = A.partitioning[src + 1] 
         end
@@ -503,9 +503,9 @@ function mul_1d!(C::MPIMatrix{T,AT}, A::Transpose{T,MPIMatrix{T,AT}}, B::MPIMatr
             src = mod(src + 1, team_size)
             dst = mod(dst - 1, team_size)
 
+            rreq = MPI.Irecv!(A_buf, transpose(A).comm; source = src, tag = 0)
             sreq = MPI.Isend(transpose(A).localarray, transpose(A).comm; dest = dst, tag = 0)
-            MPI.Recv!(A_buf, transpose(A).comm; source = src, tag = 0)
-            MPI.Wait(sreq)
+            _ = MPI.Waitall([rreq, sreq])
             
             A_part = transpose(A).partitioning[src + 1][2]
         end
@@ -529,9 +529,6 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::MPIMatrix{T,AT}, B::AbstractDo
     
     fill!(C, zero(T))
     A_buf[1:team_row, 1:cur_col] = get_local(A) # will send local A circularly
-    if Rank() == 0
-        println(size(A_buf))
-    end
     
     #fix src/dest process
     src = A.myrank
@@ -547,9 +544,9 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::MPIMatrix{T,AT}, B::AbstractDo
             src = mod(src + 1, team_size)
             dst = mod(dst - 1, team_size)
 
+            rreq = MPI.Irecv!(A_buf, A.comm; source = src, tag = 0)
             sreq = MPI.Isend(A.localarray, A.comm; dest = dst, tag = 0)
-            MPI.Recv!(A_buf, A.comm; source = src, tag = 0)
-            MPI.Wait(sreq)
+            _ = MPI.Waitall([rreq, sreq])
             
             A_part = A.partitioning[src + 1] 
         end
@@ -583,9 +580,9 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::Transpose{T,MPIMatrix{T,AT}}, 
             src = mod(src + 1, team_size)
             dst = mod(dst - 1, team_size)
 
+            rreq = MPI.Irecv!(A_buf, transpose(A).comm; source = src, tag = 0)
             sreq = MPI.Isend(transpose(A).localarray, transpose(A).comm; dest = dst, tag = 0)
-            MPI.Recv!(A_buf, transpose(A).comm; source = src, tag = 0)
-            MPI.Wait(sreq)
+            _ = MPI.Waitall([rreq, sreq])
             
             A_part = transpose(A).partitioning[src + 1][2]
         end
@@ -622,9 +619,9 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::Transpose{T,MPIMatrix{T,AT}}, 
                 src = mod(src + 1, team_size)
                 dst = mod(dst - 1, team_size)
 
+                rreq = MPI.Irecv!(A_buf, transpose(A).comm; source = src, tag = 0)
                 sreq = MPI.Isend(transpose(A).localarray, transpose(A).comm; dest = dst, tag = 0)
-                MPI.Recv!(A_buf, transpose(A).comm; source = src, tag = 0)
-                MPI.Wait(sreq)
+                _ = MPI.Waitall([rreq, sreq])
                 
                 A_part = transpose(A).partitioning[src + 1][2]
             end
@@ -663,9 +660,9 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::MPIMatrix{T,AT}, B::AbstractDo
                 src = mod(src + 1, team_size)
                 dst = mod(dst - 1, team_size)
 
+                rreq = MPI.Irecv!(A_buf, A.comm; source = src, tag = 0)
                 sreq = MPI.Isend(A.localarray, A.comm; dest = dst, tag = 0)
-                MPI.Recv!(A_buf, A.comm; source = src, tag = 0)
-                MPI.Wait(sreq)
+                _ = MPI.Waitall([rreq, sreq])
                 
                 A_part = A.partitioning[src + 1] 
             end
