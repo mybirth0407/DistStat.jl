@@ -36,6 +36,9 @@ function parse_commandline()
             help = "number of maximum inner iterations"
             arg_type = Int
             default = 20
+        "--mkl"
+            help = "use mkl"
+            action = :store_true
         # "--gpu"
         #     help = "use gpu"
         #     action = :store_true
@@ -220,6 +223,9 @@ tau_min = opts["tau_min"]
 tol = opts["epsilon"]
 max_outer = opts["max_outer"]
 max_inner = opts["max_inner"]
+if opts["mkl"]
+    using MKL
+end
 
 expand_matrix!(X)
 v = ACCORDvariables(X, lambda)
