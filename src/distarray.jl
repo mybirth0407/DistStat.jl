@@ -151,6 +151,31 @@ Base.IndexStyle(::Type{MPIArray{T,N,A}}) where {T,N,A} = IndexCartesian()
 
 Base.size(a::MPIArray) = a.sizes
 
+mutable struct BufferArray{T,N,A} <: AbstractArray{T,N}
+    #sizes::NTuple{N,Int}
+    localarray::Union{A,Nothing}
+    BufferArray{T,N,A}(localarray) where {T,N,A} = new{T,N,A}(localarray)
+end
+
+BufferMatrix{T,A} = BufferArray{T,2,A}
+
+function make_buffer(X::MPIMatrix{T,A}) where {T,A}
+    team_row, team_col = X.sizes
+    max_col = maximum(X.local_lengths) ÷ team_row
+    localarray = A{T}(undef, team_row, max_col)
+    return BufferMatrix{T,A}(localarray)
+end
+
+function expand_matrix!(X::MPIMatrix{T,A}) where {T,A}
+    team_row, team_col = X.sizes
+    max_col = maximum(X.local_lengths) ÷ team_row
+    if max_col > size(X.localarray, 2)
+        zs = A{T}(undef, team_row, max_col - size(X.localarray, 2))
+        #fill!(zs, zero(T))
+        X.localarray = hcat(X.localarray, zs)
+    end
+    return nothing
+end
 
 """
     show(io::IO, x::MPIArray)

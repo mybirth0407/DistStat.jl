@@ -1,6 +1,6 @@
 import MPI
 import MPI: COMM_WORLD
-using Random, SparseArrays, BenchmarkTools, LinearAlgebra, ArgParse, Printf, Dates, Format
+using Random, SparseArrays, LinearAlgebra, ArgParse, Printf, Dates, Format, Folds
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -86,6 +86,7 @@ mutable struct ACCORDvariables{T, A}
     p::Int
     lambda::Real
     X::MPIMatrix{T,A}
+    buf::BufferMatrix{T,A}
     Y::Matrix{T}
     GT::Matrix{T}
     OmegaT::SparseMatrixCSC{T,Int}
@@ -98,10 +99,10 @@ mutable struct ACCORDvariables{T, A}
 
         @assert size(OmegaT, 1) == p
         OmegaT_old = deepcopy(OmegaT)
-
+        buf = make_buffer(X)
         Y = Matrix{T}(undef, n, size(OmegaT, 2))
         GT = Matrix{T}(undef, p, size(OmegaT, 2))
-        new{T,A}(n, p, lambda, X, Y, GT, OmegaT, OmegaT_old, diag_indx)
+        new{T,A}(n, p, lambda, X, buf, Y, GT, OmegaT, OmegaT_old, diag_indx)
     end
     function ACCORDvariables(X::MPIMatrix{T,A}, lambda::Real) where {T,A}
         # start with default identity
@@ -115,13 +116,13 @@ end
 function compute_g!(v::ACCORDvariables{T,A}) where {T, A}
     # compute Y = X * Omega^T 
     # and return partial computation of g (smooth part of loss function)
-    mul_1d!(v.Y, v.X, v.OmegaT)
+    mul_1d!(v.Y, v.X, v.OmegaT, v.buf)
     return 0.5 * mapreduce(x -> x^2, +, v.Y) / v.n 
 end
 
 function compute_grad!(v::ACCORDvariables{T,A}) where {T, A}
     # compute G^T = X^T * Y / n, gradient for g(Omega)
-    mul_1d!(v.GT, transpose(v.X), v.Y / v.n)
+    mul_1d!(v.GT, transpose(v.X), v.Y / v.n, v.buf)
     return
 end
 
@@ -141,15 +142,8 @@ function compute_Q(v::ACCORDvariables{T,A}, tau::Real) where {T, A}
     D = v.OmegaT - v.OmegaT_old
     #partial_maxdiff = maximum(abs.(D))
     # compute D_dot_G + D_F^2/(2*tau)
+    partial_Q = Folds.mapreduce(x -> x[3] * v.GT[x[1],x[2]], +, zip(findnz(D)...)) + Folds.mapreduce(x -> x^2, +, D.nzval) / (2.0 * tau)
     partial_maxdiff = mapreduce(x -> abs(x), max, D.nzval)
-
-    D_dot_G = zero(T)
-    for (i,j,k) in zip(findnz(D)...)
-        D_dot_G += k * v.GT[i,j]
-    end
-
-    partial_Q = D_dot_G + mapreduce(x -> x^2, +, D.nzval) / (2.0 * tau)
-
     return partial_Q, partial_maxdiff
 end
 
@@ -227,6 +221,7 @@ tol = opts["epsilon"]
 max_outer = opts["max_outer"]
 max_inner = opts["max_inner"]
 
+expand_matrix!(X)
 v = ACCORDvariables(X, lambda)
 u = ACCORDUpdate(max_outer, max_inner, tau_start, tau_min, tol)
 

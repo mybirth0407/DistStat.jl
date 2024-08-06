@@ -590,6 +590,68 @@ function mul_1d!(C::AbstractMatrixOrTranspose, A::Transpose{T,MPIMatrix{T,AT}}, 
     C
 end
 
+function mul_1d!(C::AbstractMatrixOrTranspose, A::MPIMatrix{T,AT}, B::AbstractDorS{T}, buf::BufferMatrix{T, AT}) where {T,AT}
+    @assert size(C,1) == size(A.localarray,1) && size(C,2) == size(B,2)
+    team_size = length(A.local_lengths)
+    #team_row, _ = A.sizes
+    total_comm_round = length(A.local_lengths)
+
+    #cur_col = size(A.localarray, 2)
+    #max_col = maximum(A.local_lengths) ÷ team_row
+    #A_buf = AT{T}(undef, team_row, max_col)
+    
+    #fill!(buf.localarray, zero(T))
+    # buf.localarray[1:team_row, 1:cur_col] = get_local(A) # will send local A circularly
+    
+    #fix src/dest process
+    myrank = A.myrank
+    src = mod(myrank + 1, team_size)
+    dst = mod(myrank - 1, team_size)
+    fill!(C, zero(T))
+
+    # Start multiplication and reduce
+    # comm_round = 1
+    # A_part = A.partitioning[src + 1] # shift for one-indexing
+
+    for comm_round = 1:total_comm_round
+        rreq = MPI.Irecv!(buf.localarray, A.comm; source = src, tag = comm_round)
+        sreq = MPI.Isend(A.localarray, A.comm; dest = dst, tag = comm_round)
+        A_part = A.partitioning[mod(myrank + comm_round, team_size) + 1][2]
+        _ = MPI.Waitall([rreq, sreq])
+ 
+        buf.localarray, A.localarray = A.localarray, buf.localarray
+        LinearAlgebra.mul!(C, A.localarray[:, 1:length(A_part)], B[A_part, :], 1.0, 1.0)
+    end
+    C
+end
+
+function mul_1d!(C::AbstractMatrixOrTranspose, A::Transpose{T,MPIMatrix{T,AT}}, B::AbstractDorS{T}, buf::BufferMatrix{T, AT}) where {T,AT}
+    @assert size(transpose(A).localarray,1) == size(B,1) && size(C,2) == size(B,2)
+    team_size = length(transpose(A).local_lengths)
+    #team_col, team_row = transpose(A).sizes
+    total_comm_round = length(transpose(A).local_lengths)
+    
+    #fix src/dest process
+    myrank = transpose(A).myrank
+    src = mod(myrank + 1, team_size)
+    dst = mod(myrank - 1, team_size)
+
+    # Start multiplication and reduce
+    # comm_round = 1
+    # A_part = transpose(A).partitioning[src + 1][2]
+
+    for comm_round = 1:total_comm_round
+        rreq = MPI.Irecv!(buf.localarray, transpose(A).comm; source = src, tag = comm_round)
+        sreq = MPI.Isend(transpose(A).localarray, transpose(A).comm; dest = dst, tag = comm_round)
+        A_part = transpose(A).partitioning[mod(myrank + comm_round, team_size) + 1][2]
+        _ = MPI.Waitall([rreq, sreq])
+
+        buf.localarray, transpose(A).localarray = transpose(A).localarray, buf.localarray
+        LinearAlgebra.mul!(@view(C[A_part, :]), transpose(transpose(A).localarray[:,1:length(A_part)]), B)
+    end
+    C
+end
+
 function mul_1d!(C::AbstractMatrixOrTranspose, A::Transpose{T,MPIMatrix{T,AT}}, B::AbstractDorS{T}, to::TimerOutput) where {T,AT}
     @timeit to "mul_1dt setting" begin
         @assert size(transpose(A).localarray,1) == size(B,1) && size(C,2) == size(B,2)
