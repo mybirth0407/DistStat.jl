@@ -12,14 +12,14 @@ end
     distribute(a::AbstractArray; root=0, A=nothing)
 distributes a dense array.
 """
-function distribute(a::AbstractArray{T,N}; root=0, A=nothing) where {T, N}
+function distribute(group_info::Vector{Int}, a::AbstractArray{T,N}; root=0, A=nothing) where {T, N}
     if A == nothing
         TA = typeof(a)
         A = hasproperty(TA, :name) ? TA.name.wrapper : TA
     end
     reqs = MPI.Request[]
     size_a = MPI.bcast(size(a), root, MPI.COMM_WORLD)
-    rslt = MPIArray{T,N,A}(undef, size_a...)
+    rslt = MPIArray{T,N,A}(group_info, undef, size_a...)
     if Rank() == root
         for r = 0:Size() - 1
             r == Rank() && continue
@@ -41,11 +41,11 @@ end
     distribute(a::AbstractSparseMatrix; root=0, A=Array)
 distributes a sparse array into a dense MPIMatrix.
 """
-function distribute(a::AbstractSparseMatrix; root=0, A=Array)
+function distribute(group_info::Vector{Int}, a::AbstractSparseMatrix; root=0, A=Array)
     T = eltype(a)
     reqs = MPI.Request[]
     size_a = MPI.bcast(size(a), root, MPI.COMM_WORLD)
-    rslt = MPIMatrix{T,A}(undef, size_a[1], size_a[2])
+    rslt = MPIMatrix{T,A}(group_info, undef, size_a[1], size_a[2])
     if Rank() == root
         for r = 0:Size() - 1
             r == Rank() && continue
@@ -78,7 +78,7 @@ for (fname!, fname) in [(:rand!, :rand), (:randn!, :randn)]
                 forlocalpart!(y -> $fname!(y), a)
                 a
             else
-                tmp = MPIArray{Float64, N, Array}(undef, size(a)...)
+                tmp = MPIArray{Float64, N, Array}(Int[], undef, size(a)...)
                 if Rank() == root
                     src = $fname(size(a)...) # Intentionally creating Array{Float64}
                 else

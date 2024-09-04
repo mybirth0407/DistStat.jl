@@ -132,10 +132,11 @@ function npyread(
     shape, T, hdrend, toh = MPI.bcast(
         (shape, T, hdrend, toh), root, MPI.COMM_WORLD
     )
-    rslt = MPIArray{T, length(shape), A}(undef, shape...)
+    rslt = MPIArray{T, length(shape), A}(group_info, undef, shape...)
+    # rslt = MPIArray{T, length(shape), A}(undef, shape...)
 
     arr_skip = sum(rslt.local_lengths[1:Rank()])
-    println(hdrend + arr_skip * sizeof(T))
+    # println(hdrend + arr_skip * sizeof(T))
     f = open(filename, "r")
     seek(f, hdrend + arr_skip * sizeof(T))
     rslt.localarray = map(

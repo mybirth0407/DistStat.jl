@@ -1,5 +1,6 @@
 export MPIArray, MPIVector, MPIMatrix, MPIVecOrMat, localindices, getblock, getblock!, putblock!, allocate, forlocalpart, forlocalpart!, free, redistribute, redistribute!, sync, GlobalBlock, GhostedBlock, getglobal, globaltolocal, globalids
 using MPI
+using StatsBase
 import LinearAlgebra
 import Base: show, print_array, summary, array_summary, copyto!
 import Adapt: adapt
@@ -13,12 +14,70 @@ p = ContinuousPartitioning([2,5,3], [2,3])
 ```
 will construct a distribution containing 6 partitions of 2, 5 and 3 rows and 2 and 3 columns.
 """
+
+function split_group_info(group_info::Vector{Int}, N::Int)
+    # 그룹별 변수 개수를 계산합니다.
+    group_counts = countmap(group_info)
+
+    # 그룹별로 누적 개수를 계산합니다.
+    cumulative_counts = cumsum(values(group_counts))
+    
+    # N등분의 크기 목표를 설정합니다.
+    total_variables = length(group_info)
+    target_size = ceil(Int, total_variables / N)
+
+    # 각 등분의 크기를 담을 배열
+    sizes = Int[]
+
+    # 현재 분할의 시작 인덱스
+    current_start = 1
+
+    # N-1개까지의 등분을 만듭니다.
+    for _ in 1:(N-1)
+        current_end = searchsortedfirst(cumulative_counts, cumulative_counts[current_start] + target_size - 1)
+        if current_end > length(cumulative_counts)
+            current_end = length(cumulative_counts)
+        end
+        if current_start == 1
+            push!(sizes, cumulative_counts[current_end])
+        else
+            push!(sizes, cumulative_counts[current_end] - cumulative_counts[current_start - 1])
+        end
+        current_start = current_end + 1
+    end
+
+    # 마지막 등분은 남은 모든 변수를 포함합니다.
+    push!(sizes, total_variables - sum(sizes))
+
+    return sizes
+end
 struct ContinuousPartitioning{N} <: AbstractArray{Int,N}
     ranks::LinearIndices{N,NTuple{N,Base.OneTo{Int}}}
     index_starts::NTuple{N,Vector{Int}}
     index_ends::NTuple{N,Vector{Int}}
 
-    function ContinuousPartitioning(partition_sizes::Vararg{Any,N}) where {N}
+    # function ContinuousPartitioning(partition_sizes::Vararg{Any,N}) where {N}
+    #     index_starts = Vector{Int}.(undef,length.(partition_sizes))
+    #     index_ends = Vector{Int}.(undef,length.(partition_sizes))
+    #     for (idxstart,idxend,nb_elems_dist) in zip(index_starts,index_ends,partition_sizes)
+    #         currentstart = 1
+    #         currentend = 0
+    #         for i in eachindex(idxstart)
+    #             currentend += nb_elems_dist[i]
+    #             idxstart[i] = currentstart
+    #             idxend[i] = currentend
+    #             currentstart += nb_elems_dist[i]
+    #         end
+    #     end
+    #     ranks = LinearIndices(length.(partition_sizes))
+    #     return new{N}(ranks, index_starts, index_ends)
+    # end
+
+    function ContinuousPartitioning(group_info::Vector{Int}, partition_sizes::Vararg{Any,N}) where {N}
+        # println("partition_sizes: ", partition_sizes)
+        new_partition_sizes = split_group_info(group_info, N)
+        println("new_partition_sizes: ", new_partition_sizes)
+
         index_starts = Vector{Int}.(undef,length.(partition_sizes))
         index_ends = Vector{Int}.(undef,length.(partition_sizes))
         for (idxstart,idxend,nb_elems_dist) in zip(index_starts,index_ends,partition_sizes)
@@ -31,6 +90,7 @@ struct ContinuousPartitioning{N} <: AbstractArray{Int,N}
                 currentstart += nb_elems_dist[i]
             end
         end
+        
         ranks = LinearIndices(length.(partition_sizes))
         return new{N}(ranks, index_starts, index_ends)
     end
@@ -62,9 +122,20 @@ end
 
 # Evenly distribute nb_elems over parts partitions
 function distribute(nb_elems, parts)
+    println("distarray/nb_elems :", nb_elems)
+    println("distarray/parts :", parts)
     local_len = nb_elems ÷ parts
     remainder = nb_elems % parts
     return [p <= remainder ? local_len+1 : local_len for p in 1:parts]
+end
+
+function distribute(group_info, nb_elems, parts)
+    println("distarray/nb_elems2 :", nb_elems)
+    println("distarray/parts2 :", parts)
+    return split_group_info(group_info, parts)
+    # local_len = nb_elems ÷ parts
+    # remainder = nb_elems % parts
+    # return [p <= remainder ? local_len+1 : local_len for p in 1:parts]
 end
 
 function local_lengths(x::ContinuousPartitioning{N}) where N
@@ -84,27 +155,74 @@ mutable struct MPIArray{T,N,A} <: AbstractArray{T,N}
     myrank::Int
     local_lengths::Vector{Int}
     
-    MPIArray{T,N,A}(sizes, localarray, partitioning, comm, myrank, local_lengths) where {T,N,A} = new{T,N,A}(sizes, localarray, partitioning, comm, myrank, local_lengths)
-    function MPIArray{T,N,A}(comm::MPI.Comm, partition_sizes::Vararg{AbstractVector{<:Integer},N}) where {T,N,A}
+    # MPIArray{T,N,A}(sizes, localarray, partitioning, comm, myrank, local_lengths) where {T,N,A} = new{T,N,A}(sizes, localarray, partitioning, comm, myrank, local_lengths)
+    # function MPIArray{T,N,A}(comm::MPI.Comm, partition_sizes::Vararg{AbstractVector{<:Integer},N}) where {T,N,A}
+    #     nb_procs = MPI.Comm_size(comm)
+    #     rank = MPI.Comm_rank(comm)
+    #     partitioning = ContinuousPartitioning(Int[], partition_sizes...)
+
+    #     localarray = A{T}(undef,length.(partitioning[rank+1]))
+    #     # win = MPI.Win_create(localarray, comm)
+    #     sizes = sum.(partition_sizes)
+    #     # return new{T,N,A}(sizes, localarray, partitioning, comm, win, rank, local_lengths(partitioning))
+    #     return new{T,N,A}(sizes, localarray, partitioning, comm, rank, local_lengths(partitioning))
+    # end
+    # MPIArray{T,N,A}(comm::MPI.Comm, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(comm, distribute.(sizes, partitions)...)
+    # MPIArray{T,N,A}(::UndefInitializer, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(MPI.COMM_WORLD, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...)
+
+``
+    function MPIArray{T,N,A}(group_info::Vector{Int}, comm::MPI.Comm, partition_sizes::Vararg{AbstractVector{<:Integer},N}) where {T,N,A}
+        println("distarray/partition_sizes :", partition_sizes)
         nb_procs = MPI.Comm_size(comm)
         rank = MPI.Comm_rank(comm)
-        partitioning = ContinuousPartitioning(partition_sizes...)
-
+        partitioning = ContinuousPartitioning(group_info, partition_sizes...)
+        println("distarray/partitioning :", partitioning)
         localarray = A{T}(undef,length.(partitioning[rank+1]))
         # win = MPI.Win_create(localarray, comm)
         sizes = sum.(partition_sizes)
         # return new{T,N,A}(sizes, localarray, partitioning, comm, win, rank, local_lengths(partitioning))
         return new{T,N,A}(sizes, localarray, partitioning, comm, rank, local_lengths(partitioning))
     end
-    MPIArray{T,N,A}(comm::MPI.Comm, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(comm, distribute.(sizes, partitions)...)
-    MPIArray{T,N,A}(::UndefInitializer, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(MPI.COMM_WORLD, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...)
 
+    MPIArray{T,N,A}(group_info::Vector{Int}, comm::MPI.Comm, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(group_info::Vector{Int}, comm, distribute.(group_info, sizes, partitions)...)
+
+    MPIArray{T,N,A}(group_info::Vector{Int}, ::UndefInitializer, sizes::Vararg{Integer,N}) where {T,N,A} = MPIArray{T,N,A}(group_info::Vector{Int}, MPI.COMM_WORLD, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...)
+    """"""
 end
 
-function MPIArray(comm::MPI.Comm, init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N}; T=nothing, A=nothing) where N
+# function MPIArray(comm::MPI.Comm, init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N}; T=nothing, A=nothing) where N
+#     nb_procs = MPI.Comm_size(comm)
+#     rank = MPI.Comm_rank(comm)
+#     partitioning = ContinuousPartitioning(Int[], partition_sizes...)
+    
+#     localarray = construct_localpart(init, partitioning;T=T,A=A)
+    
+#     T = eltype(localarray)
+#     TLA = typeof(localarray)
+#     A = hasproperty(TLA, :name) ? TLA.name.wrapper : TLA
+
+#     sizes = sum.(partition_sizes)
+
+#     MPIArray{T,N,A}(sizes, localarray, partitioning, comm, rank, local_lengths(partitioning))
+# end
+
+# MPIArray(init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N};T=nothing,A=nothing) where N = MPIArray(MPI.COMM_WORLD, init, partition_sizes...;T=T,A=A)
+
+# MPIArray(init::Function, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N};T=nothing, A=nothing) where N = MPIArray(init, distribute.(sizes, partitions)...; T=T,A=A)
+
+# MPIArray(init::Function, sizes::Vararg{Integer,N}; T=nothing, A=nothing) where N = MPIArray(init, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...; T=T, A=A)
+
+# function MPIArray(comm::MPI.Comm, localarray::AbstractArray)
+#     #TODO, construct from localarrays 
+# end
+
+# MPIArray(localarray::AbstractArray) = MPIArray(MPI.COMM_WORLD, localarray)
+
+""""""
+function MPIArray(group_info::Vector{Int}, comm::MPI.Comm, init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N}; T=nothing, A=nothing) where N
     nb_procs = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
-    partitioning = ContinuousPartitioning(partition_sizes...)
+    partitioning = ContinuousPartitioning(group_info, partition_sizes...)
     
     localarray = construct_localpart(init, partitioning;T=T,A=A)
     
@@ -115,20 +233,20 @@ function MPIArray(comm::MPI.Comm, init::Function, partition_sizes::Vararg{Abstra
     sizes = sum.(partition_sizes)
 
     MPIArray{T,N,A}(sizes, localarray, partitioning, comm, rank, local_lengths(partitioning))
-    
 end
 
-MPIArray(init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N};T=nothing,A=nothing) where N = MPIArray(MPI.COMM_WORLD, init, partition_sizes...;T=T,A=A)
+MPIArray(group_info::Vector{Int}, init::Function, partition_sizes::Vararg{AbstractVector{<:Integer}, N};T=nothing,A=nothing) where N = MPIArray(group_info, MPI.COMM_WORLD, init, partition_sizes...;T=T,A=A)
 
-MPIArray(init::Function, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N};T=nothing, A=nothing) where N = MPIArray(init, distribute.(sizes, partitions)...; T=T,A=A)
+MPIArray(group_info::Vector{Int}, init::Function, partitions::NTuple{N,<:Integer}, sizes::Vararg{Integer,N};T=nothing, A=nothing) where N = MPIArray(group_info, init, distribute.(group_info, sizes, partitions)...; T=T,A=A)
 
-MPIArray(init::Function, sizes::Vararg{Integer,N}; T=nothing, A=nothing) where N = MPIArray(init, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...; T=T, A=A)
+MPIArray(group_info::Vector{Int}, init::Function, sizes::Vararg{Integer,N}; T=nothing, A=nothing) where N = MPIArray(group_info, init, (ones(Int, N-1)..., MPI.Comm_size(MPI.COMM_WORLD)), sizes...; T=T, A=A)
 
-function MPIArray(comm::MPI.Comm, localarray::AbstractArray)
+function MPIArray(group_info::Vector{Int}, comm::MPI.Comm, localarray::AbstractArray)
     #TODO, construct from localarrays 
 end
 
-MPIArray(localarray::AbstractArray) = MPIArray(MPI.COMM_WORLD, localarray)
+MPIArray(group_info::Vector{Int}, localarray::AbstractArray) = MPIArray(group_info, MPI.COMM_WORLD, localarray)
+""""""
 
 function construct_localpart(init, partitioning; T=nothing, A=nothing)
     localidx = partitioning[Rank() + 1]
@@ -275,5 +393,4 @@ function forlocalpart!(f, As::Vararg{AbstractArray,N}) where N
     end
     return result
 end
-
 
