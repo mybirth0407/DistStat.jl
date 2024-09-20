@@ -48,7 +48,7 @@ mutable struct COXVariables{T, A}
     obj_prev::Real
 
     function COXVariables(X::MPIMatrix{T,A}, δ::A, λ::AbstractFloat,
-                        t::A, group_info::Vector{Int};
+                        t::A, group_info::Vector{Int64};
                         # σ::T=convert(T, 1/(2*opnorm(X; verbose=true)^2)), 
                         σ::T=0.000001,
                         eval_obj=false) where {T,A}
@@ -124,6 +124,12 @@ end
 function cox_grad!(group_info, out, w, W, W_dist, t, q, X, β, δ, bind)
     T = eltype(β)
     m, n = size(X)
+    # println("cox-group/cox_grad! size(w): ", size(w))
+    # println("cox-group/cox_grad! size(X): ", size(X))
+    # println("cox-group/cox_grad! size(β): ", size(β))
+    # println("cox-group/cox_grad! local size(X): ", size(X.localarray))
+    # println("cox-group/cox_grad! local size(β): ", size(β.localarray))
+    # println("cox-group/cox_grad! local size(w): ", size(w.localarray))
     mul!(w, X, β)
     w .= exp.(w) 
     cumsum!(q, w) # q is used as a dummy variable
@@ -229,11 +235,13 @@ lambda = opts["lambda"]
 # Vector of Vector{Any}
 variable_to_groups = Pickle.load("examples/variable_to_groups_index.pkl")
 # Vector{Int}
+# group_info = Int64[vcat(variable_to_groups...)...]
 group_info = Int64[vcat(variable_to_groups...)...]
+# group_info_reshaped = reshape(group_info, 1, size(group_info)[1])
 
 X = npyread("examples/array_predictors.npy", A=A, group_info=group_info);
 # println(X)
-println("main/localarray :", size(X.localarray))
+println("cox-group/main/localarray :", size(X.localarray))
 # println(1/(2*opnorm(X; verbose=true)^2))
 
 # println(size(X)) # (723, 1301)

@@ -92,7 +92,8 @@ end
 
 function npyread(
     filename::AbstractString;
-    root=0, A=Array, group_info::Vector{Int}=Int[]
+    # root=0, A=Array
+    root=0, A=Array, group_info::Vector{Int64}=Int[]
 )
     success = 0
     shape = 0
@@ -132,6 +133,7 @@ function npyread(
     shape, T, hdrend, toh = MPI.bcast(
         (shape, T, hdrend, toh), root, MPI.COMM_WORLD
     )
+    # println("utils/typeof(group_info)", typeof(group_info))
     rslt = MPIArray{T, length(shape), A}(group_info, undef, shape...)
     # rslt = MPIArray{T, length(shape), A}(undef, shape...)
 

@@ -12,7 +12,7 @@ end
     distribute(a::AbstractArray; root=0, A=nothing)
 distributes a dense array.
 """
-function distribute(group_info::Vector{Int}, a::AbstractArray{T,N}; root=0, A=nothing) where {T, N}
+function distribute(group_info::Vector{Int64}, a::AbstractArray{T,N}; root=0, A=nothing) where {T, N}
     if A == nothing
         TA = typeof(a)
         A = hasproperty(TA, :name) ? TA.name.wrapper : TA

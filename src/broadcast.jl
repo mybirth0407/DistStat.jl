@@ -50,6 +50,10 @@ end
 
 function Base.copy(bc::Broadcasted{<:MPIArrayStyle})
     dbc = bcdistribute(bc)
+    # println("map(length, axes(bc))...: ", map(length, axes(bc))...)
+    """
+    map(length, axes(bc))...: 1301
+    """
     MPIArray(map(length, axes(bc))...) do I
         lbc = Broadcast.instantiate(bclocal(dbc, I))
         copy(lbc)
