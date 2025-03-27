@@ -15,7 +15,7 @@ p = ContinuousPartitioning([2,5,3], [2,3])
 will construct a distribution containing 6 partitions of 2, 5 and 3 rows and 2 and 3 columns.
 """
 
-DEBUG=true
+DEBUG=false
 
 function split_group_info(group_info::Vector{Int}, N::Int)
     # 그룹별 변수 개수를 계산
@@ -64,7 +64,9 @@ struct ContinuousPartitioning{N} <: AbstractArray{Int,N}
         # sum(partition_sizes[2])가 있고, 값이 group_info length와 같아야 함
         if length(partition_sizes) == 2 && length(group_info) == sum(partition_sizes[2])
             group_partition = split_group_info(group_info, length(partition_sizes[2]))
-            println("distarray/ContinuousPartitioning/split_group_info [2]:", group_partition)
+            if DEBUG
+                println("distarray/ContinuousPartitioning/split_group_info [2]:", group_partition)
+            end
             for i in 1:length(partition_sizes[2])
                 partition_sizes[2][i] = group_partition[i][1]
             end
@@ -72,16 +74,20 @@ struct ContinuousPartitioning{N} <: AbstractArray{Int,N}
             # println("distarray/ContinuousPartitioning/partition_sizes :", partition_sizes)
         elseif length(partition_sizes) == 1 && length(group_info) == sum(partition_sizes[1])
             group_partition = split_group_info(group_info, length(partition_sizes[1]))
-            println("distarray/ContinuousPartitioning/split_group_info [1] :", group_partition)
+            if DEBUG
+                println("distarray/ContinuousPartitioning/split_group_info [1] :", group_partition)
+            end
             for i in 1:length(partition_sizes[1])
                 partition_sizes[1][i] = group_partition[i][1]
             end
         else
-            println("no_split_group_info")
-            println("length(group_info) :", length(group_info))
-            println("length(partition_sizes) :", length(partition_sizes))
-            println("sum: ", sum(partition_sizes[1]))
-            println("partition_sizes :", partition_sizes)
+            if DEBUG
+                println("distarray/ContinuousPartitioning/no_split_group_info")
+                println("length(group_info) :", length(group_info))
+                println("length(partition_sizes) :", length(partition_sizes))
+                println("sum: ", sum(partition_sizes[1]))
+                println("partition_sizes :", partition_sizes)
+            end
         end
 
         index_starts = Vector{Int}.(undef,length.(partition_sizes))

@@ -147,3 +147,47 @@ function npyread(
     close(f)
     rslt
 end
+
+
+"""
+    mapper_mat_idx
+
+Create three items.
+
+1. Function that creates a function that maps a pair of data matrices (penalized variables, unpenalized variables) to a LinearMap object
+2. `grpmat`, a sparse matrix that rearranges variables in the order of groups, with possible replications.
+3. `grpidx`, indicating which group each column of `grpmat` corresponds to.
+
+# Arguments
+
+* `groups::Vector{Vector{Int}}`: each element is an array of indices of variables in each group.
+* `n_vars::Int`: number of penalized variables
+* `sparsemapper`: a function that takes a `SparseMatrixCSC` to create a spares matrix for the device.
+"""
+function mapper_mat_idx(groups::Vector{Vector{Int}}, n_vars::Int; sparsemapper::Function=Base.identity)
+    rowval = vcat(groups...)
+    colptr = collect(1:(length(rowval) + 1))
+    nzval = ones(length(colptr) - 1)
+
+    grpmat = sparsemapper(SparseMatrixCSC(n_vars, length(rowval), colptr, rowval, nzval))
+
+    grpidx = Int[]
+    for (i, v) in enumerate(groups)
+        for j in 1:length(v)
+            push!(grpidx, i)
+        end
+    end
+
+    mapper = (X, X_unpen) -> hcat(LinearMap(X) * LinearMap(grpmat), LinearMap(X_unpen))
+
+    mapper, grpmat, grpidx
+end
+
+"""
+    gather!(out, vec, ind)
+
+Simply returns out .= vec[ind]. Intended for extension on `CuArray`s.
+"""
+function gather!(out, vec, ind)
+    out .= vec[ind]
+end

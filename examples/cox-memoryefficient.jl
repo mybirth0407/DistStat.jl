@@ -1,4 +1,4 @@
-using DistStat, Random, LinearAlgebra, LoopVectorization
+qnusing DistStat, Random, LinearAlgebra, LoopVectorization
 
 mutable struct COXUpdate
     maxiter::Int
@@ -186,50 +186,7 @@ iter = opts["iter"]
 interval = opts["step"]
 T = Float64
 A = Array
-using CUDA
-if opts["gpu"]
-    A = CuArray
 
-    # All the GPU-related functions here
-    function π_δ_kernel!(out, w, W_dist, δ, breslow, W_range)
-        # fill `out` with zeros beforehand.
-        idx_x = (blockIdx().x-1) * blockDim().x + threadIdx().x
-        stride_x = blockDim().x * gridDim().x
-        W_base = minimum(W_range) - 1
-        for i in idx_x:stride_x:length(out)
-            for j in W_range
-                @inbounds if breslow[i] <= breslow[j]
-                    out[i] += δ[j] * w[i] / W_dist[j - W_base]
-                end
-            end
-        end  
-    end
-
-    function π_δ!(out::CuArray, w::CuArray, W_dist, δ, breslow, W_range)
-        numblocks = ceil(Int, length(w)/256)
-        CUDA.@sync begin
-            @cuda threads=256 blocks=numblocks π_δ_kernel!(out, w, W_dist.localarray, δ, breslow, W_range)
-        end
-        DistStat.Allreduce!(out)
-        out
-    end
-
-    function breslow_kernel!(out, cumsum_w, bind)
-        idx_x = (blockIdx().x-1) * blockDim().x + threadIdx().x
-        stride_x = blockDim().x * gridDim().x
-        for i = idx_x: stride_x:length(out)
-            out[i]=cumsum_w[bind[i]]
-        end
-    end
-
-    function get_breslow!(out::CuArray, cumsum_w::CuArray, bind)
-        numblocks = ceil(Int, length(out)/256)
-        CUDA.@sync begin
-            @cuda threads=256 blocks=numblocks breslow_kernel!(out, cumsum_w, bind)
-        end
-        out
-    end
-end
 if opts["Float32"]
     T = Float32
 end

@@ -2,7 +2,13 @@ module DistStat
 
 import MPI
 import MPI: COMM_WORLD
+
+export Penalty, NormL1, GroupNormL2, value, prox!
+
 using Requires
+using LinearMaps
+
+const MapOrMatrix{T} = Union{LinearMap{T},AbstractMatrix{T}}
 
 function __init__()
     MPI.Initialized() || MPI.Init()
@@ -30,5 +36,6 @@ include("accumulate.jl")
 include("broadcast.jl")
 include("arrayfunctions.jl")
 include("utils.jl")
+include("penalties.jl")
 
 end # module

@@ -47,6 +47,10 @@ function parse_commandline_nmf()
             help = "number of cols"
             arg_type = Int
             default = 10_000
+        "--unpen"
+            help = "number of unpenalized variables"
+            arg_type = Int
+            default = 0
         "--r"
             help = "intermediate size"
             arg_type = Int
